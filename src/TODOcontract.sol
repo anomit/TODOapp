@@ -6,6 +6,7 @@ contract TODOListContract {
     uint256 private itemCount;
     event TodoItemUpdated(uint256 itemId, bool updatedStatus);
     event TodoItemAdded(uint256 itemId, string note);
+    event TodoItemRemoved(uint256 itemId);
     
     struct TodoItem {
         uint256 id;  // internal identifier
@@ -32,6 +33,7 @@ contract TODOListContract {
         items[itemId].note = 'Redacted';
         items[itemId].id = 0;
         items[itemId].status = false;
+        emit TodoItemRemoved(itemId);
     }
     
     function getAllTodo() public view returns (TodoItem[] memory) {

@@ -7,7 +7,8 @@
     import {wsTxStore} from '../stores.js';
 
     let todoItems = [];
-    let pendingTx = null
+    let pendingTx = null;
+    let pendingDeleteTx = null;
     let todoText = "";
     let loading = false;
 
@@ -18,8 +19,20 @@
         event.preventDefault();
         const input = document.querySelector('.js-todo-input');
         todoText = todoText.trim();
-        
-        // call postTodo here
+        if (todoText !== '') {
+            input.value = '';
+            input.focus();
+            try {
+              const txhash = await postTodo(todoText);
+              pendingTx = txhash;
+            }
+            catch(err) {
+              console.error('Problem sending transaction. Returned error: ', err);
+              await showAlert("Could not submit TODO note as transaction. Let's try again.");
+              return;
+            }
+
+        }
     }
 
     async function postTodo(note) {
@@ -28,11 +41,11 @@
         try{
           const response = await axios.post(contractResourcePath, 
             {
-                // corresponding to contract function parameter
+              'item': note  // corresponding to contract function parameter
             }, 
             {
               headers: {
-                // pass API key corresponding to your EthVigil account
+                "X-API-KEY": API_KEY  // pass API key corresponding to your EthVigil account
               }
             }
           );
@@ -57,7 +70,21 @@
         try {
           const response = await axios.get(contractResourcePath);
           if (response.data.success) {
-            // update todoItems
+            const data_list = response.data.data[0]["(uint256,string,bool)[]"];
+            data_list.forEach((element, index) => {
+              console.log('Adding element from response to todoItems: ', element);
+              if (element[1] != 'Redacted'){
+                const item = {
+                  'internalId': element[0],
+                  'id': index,
+                  'text': element[1],
+                  'checked': element[2]
+                }
+                todoItems = [...todoItems, item]
+              }
+            });
+            loading = false;
+            console.log('Todo items: ', todoItems);
             resolve(true);
           }
           else {
@@ -65,20 +92,86 @@
           }
         }
         catch(err) {
-          reject(err);
+
         }
       });
     }
 
+    async function deleteTodo(itemId) {
+      return new Promise ( async(resolve, reject) => {
+        const contractResourcePath = evAPIPrefix + '/contract/' + contractAddress + '/removeTodo';
+        try{
+          const response = await axios.post(contractResourcePath, 
+            {
+              'itemId': Number(itemId)  // corresponding to contract function parameter
+            }, 
+            {
+              headers: {
+                "X-API-KEY": API_KEY  // pass API key corresponding to your EthVigil account
+              }
+            }
+          );
+          if (response.data.success) {
+            resolve(response.data.data[0].txHash);
+          }
+          else {
+            reject(response);
+          }
+        }
+        catch(err) {
+          reject(err);
+        }
+        
+      });
 
+    }
+
+    async function handleListClick(event) {
+      if (event.target.classList.contains('js-delete-todo')) {
+        const itemKey = event.target.parentElement.dataset.key;
+        console.log('Got remove action on item key: ', itemKey);
+        try {
+          const txhash = await deleteTodo(itemKey);
+          pendingDeleteTx = txhash;
+        }
+        catch(err) {
+          console.error('Problem sending delete transaction. Returned error: ', err);
+          await showAlert("Could not submit TODO note as transaction. Let's try again.");
+          return;
+        }
+      }
+    }
     onMount(async () => {
       initWS();
       getAllTodos();
     });
     
     const unsubscribeWSTxStore = wsTxStore.subscribe( value => {
-      if (value && value.type == 'event' && value.event_name == 'TodoItemAdded') {
-        // catch websocket updates and update todo items
+      if (value && value.type === 'event') {
+        console.log('Web socket update received', value);
+        let eventName = value.event_name;
+        console.log(eventName);
+        switch(eventName){
+          case 'TodoItemAdded':
+            console.log('New item added');
+            const newItem = {
+              'id': value.event_data.itemId,
+              'text': value.event_data.note,
+              'checked': false
+            }
+            todoItems = [...todoItems, newItem];
+            if (value.txHash == pendingTx) {
+              pendingTx = null;
+            }
+            break;
+          case 'TodoItemRemoved':
+            let deletedId = value.event_data.itemId;
+            console.log('Todo item removed, taking action on UI ', deletedId);
+            todoItems = todoItems.filter(item => item.id !== Number(deletedId));
+            console.log('Filtered todoItems: ', todoItems);
+            break;
+        }
+      }
     });
 
     onDestroy(() => {
@@ -103,7 +196,7 @@
     <br />
     <ul class="todo-list js-todo-list">
     {#each todoItems as item}
-      <li class="todo-item" data-key="{item.id}">
+      <li class="todo-item" data-key="{item.id}" on:click={handleListClick}>
         <input id="{item.id}" type="checkbox" />
         <label for="{item.id}" class='tick js-tick'></label>
         <span>{item.text}</span>
@@ -116,6 +209,7 @@
     {#if pendingTx}
       <p transition:fly>
         Await todo entry confirmation on chain...
+        TxHash <code>{pendingTx}</code>
       </p>
     {/if}
   </div>
