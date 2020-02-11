@@ -52,6 +52,10 @@ html {
     align-items: center;
     justify-content: space-between;
   }
+
+  .todo-item-pending {
+    color: #9d0a0a;
+  }
   
   .todo-item span {
     flex-grow: 1;

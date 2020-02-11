@@ -1,6 +1,6 @@
 <script>
     import { onMount, onDestroy } from 'svelte';
-    import { fly } from 'svelte/transition';
+    import { fly, fade } from 'svelte/transition';
     import '../../static/todo.css';
     import axios from 'axios';
     import {evAPIPrefix, API_KEY, API_READ_KEY, contractAddress, showAlert, initWS} from '../common.js';
@@ -9,6 +9,7 @@
     let todoItems = [];
     let pendingTx = null;
     let pendingDeleteTx = null;
+    let pendingDeleteKey = null;
     let todoText = "";
     let loading = false;
 
@@ -133,6 +134,7 @@
         try {
           const txhash = await deleteTodo(itemKey);
           pendingDeleteTx = txhash;
+          pendingDeleteKey = itemKey;
         }
         catch(err) {
           console.error('Problem sending delete transaction. Returned error: ', err);
@@ -166,9 +168,10 @@
             break;
           case 'TodoItemRemoved':
             let deletedId = value.event_data.itemId;
-            console.log('Todo item removed, taking action on UI ', deletedId);
+            // console.log('Todo item removed, taking action on UI ', deletedId);
             todoItems = todoItems.filter(item => item.id !== Number(deletedId));
-            console.log('Filtered todoItems: ', todoItems);
+            // console.log('Filtered todoItems: ', todoItems);
+            pendingDeleteKey = null;
             break;
         }
       }
@@ -196,14 +199,27 @@
     <br />
     <ul class="todo-list js-todo-list">
     {#each todoItems as item}
-      <li class="todo-item" data-key="{item.id}" on:click={handleListClick}>
-        <input id="{item.id}" type="checkbox" />
+      {#if item.id != pendingDeleteKey}
+        <li class="todo-item" data-key="{item.id}" on:click={handleListClick}>
+         <input id="{item.id}" type="checkbox" />
         <label for="{item.id}" class='tick js-tick'></label>
         <span>{item.text}</span>
         <button class="delete-todo js-delete-todo">
           <svg><use href="#delete-icon"></use></svg>
         </button>
       </li>
+      {:else}
+        <li class="todo-item" data-key="{item.id}" on:click={handleListClick} transition:fly>
+         <input id="{item.id}" type="checkbox" />
+        <label for="{item.id}" class='tick js-tick'></label>
+        <span class="todo-item-pending">{item.text} (...pending deletion)</span>
+        <button class="delete-todo js-delete-todo">
+          <svg><use href="#delete-icon"></use></svg>
+        </button>
+      </li>
+      {/if}
+
+       
     {/each}
     </ul>
     {#if pendingTx}
